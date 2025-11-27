@@ -130,6 +130,104 @@ app.post('/sign-transaction', async (req, res) => {
   }
 });
 
+// Sign and send transaction endpoint (for user-to-user transfers)
+app.post('/sign-and-send-transaction', async (req, res) => {
+  try {
+    const {
+      transaction,
+      privateKey,
+      rpcUrl
+    } = req.body;
+
+    // Validate required fields
+    if (!transaction) {
+      return res.status(400).json({
+        success: false,
+        message: 'Transaction object is required'
+      });
+    }
+
+    if (!privateKey) {
+      return res.status(400).json({
+        success: false,
+        message: 'Private key is required'
+      });
+    }
+
+    // Use provided RPC URL or default BSC RPC
+    const providerUrl = rpcUrl || 'https://bsc-dataseed1.binance.org/';
+    const provider = new ethers.JsonRpcProvider(providerUrl);
+
+    console.log('📝 [SEND] Received sign-and-send transaction request');
+    console.log('📝 [SEND] RPC URL:', providerUrl);
+
+    // Create wallet from private key
+    let wallet;
+    try {
+      wallet = new ethers.Wallet(privateKey, provider);
+      console.log('✅ [SEND] Wallet created from private key');
+      console.log('✅ [SEND] Wallet address:', wallet.address);
+    } catch (error) {
+      console.error('❌ [SEND] Failed to create wallet:', error.message);
+      return res.status(400).json({
+        success: false,
+        message: 'Invalid private key format'
+      });
+    }
+
+    // Prepare transaction
+    const txRequest = {
+      to: transaction.to,
+      value: transaction.value || '0x0',
+      data: transaction.data,
+      gasLimit: transaction.gas,
+      gasPrice: transaction.gasPrice,
+      nonce: transaction.nonce,
+      chainId: transaction.chainId
+    };
+
+    console.log('📝 [SEND] Transaction request prepared');
+
+    // Sign and send transaction
+    let txResponse;
+    try {
+      txResponse = await wallet.sendTransaction(txRequest);
+      console.log('✅ [SEND] Transaction sent successfully');
+      console.log('✅ [SEND] Transaction hash:', txResponse.hash);
+      
+      // Wait for transaction to be mined
+      console.log('⏳ [SEND] Waiting for transaction confirmation...');
+      const receipt = await txResponse.wait();
+      console.log('✅ [SEND] Transaction confirmed in block:', receipt.blockNumber);
+      
+      return res.json({
+        success: true,
+        txHash: txResponse.hash,
+        receipt: {
+          blockNumber: receipt.blockNumber,
+          blockHash: receipt.blockHash,
+          gasUsed: receipt.gasUsed.toString(),
+          status: receipt.status
+        },
+        message: 'Transaction sent and confirmed successfully'
+      });
+    } catch (error) {
+      console.error('❌ [SEND] Failed to send transaction:', error.message);
+      return res.status(500).json({
+        success: false,
+        message: `Transaction failed: ${error.message}`
+      });
+    }
+
+  } catch (error) {
+    console.error('❌ [SEND] Unexpected error:', error);
+    res.status(500).json({
+      success: false,
+      message: `Internal server error: ${error.message}`
+    });
+  }
+});
+
 // Error handling middleware
 app.use((err, req, res, next) => {
   console.error('❌ [ERROR] Unhandled error:', err);
@@ -144,5 +242,5 @@ app.listen(PORT, () => {
   console.log(`🚀 [SERVER] Taji Signing Service running on port ${PORT}`);
   console.log(`🚀 [SERVER] Health check: http://localhost:${PORT}/health`);
   console.log(`🚀 [SERVER] Sign endpoint: http://localhost:${PORT}/sign-transaction`);
+  console.log(`🚀 [SERVER] Sign and send endpoint: http://localhost:${PORT}/sign-and-send-transaction`);
 });
-
